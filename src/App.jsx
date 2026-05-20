@@ -1,17 +1,33 @@
 import { useState, useEffect, useRef } from "react";
 import CueSvg1 from './CueLogo1.svg';
-import CueSvg2 from'./CueLogo2.svg';
+import CueSvg2 from './CueLogo2.svg';
 import { ReactComponent as GoogleSvg } from './icons8-google-50.svg';
 import { ReactComponent as AppleSvg } from './apple-logo-svgrepo-com.svg';
 
-import { auth, googleProvider } from './firebase';
+import { auth, googleProvider, db } from './firebase';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
   sendPasswordResetEmail,
-  updateProfile
+  sendEmailVerification,
+  updateProfile,
+  onAuthStateChanged,
+  signOut 
 } from "firebase/auth";
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  deleteDoc, 
+  doc,
+  updateDoc,
+  serverTimestamp,  // ADD THIS
+  Timestamp         // ADD THIS
+} from "firebase/firestore";
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
 const MOCK_MEMORIES = [
   {
@@ -71,11 +87,21 @@ const cx = (...args) => args.filter(Boolean).join(" ");
 const formatDate = (d) => new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date()) / 86400000);
 
+const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "image/jpeg", "image/png", "video/mp4", "video/quicktime",
+  "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
+]);
+const ALLOWED_ATTACHMENT_EXT = /\.(jpe?g|png|mp4|mov|mp3|m4a|wav)$/i;
+
+function isAllowedAttachment(file) {
+  return ALLOWED_ATTACHMENT_TYPES.has(file.type) || ALLOWED_ATTACHMENT_EXT.test(file.name);
+}
+
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
 const GlobalStyles = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
-
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Open+Sans:wght@300;400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -92,8 +118,8 @@ const GlobalStyles = () => (
       --text: #F0F4FF;
       --muted: #6B7FA3;
       --soft: #94A3B8;
-      --serif: 'DM Serif Display', Georgia, serif;
-      --sans: 'DM Sans', system-ui, sans-serif;
+      --serif: 'Inter', system-ui, sans-serif;    
+      --sans: 'Open Sans', system-ui, sans-serif;
     }
 
     html { scroll-behavior: smooth; }
@@ -279,7 +305,52 @@ const GlobalStyles = () => (
     textarea { resize: none; }
 
     select option { background: var(--navy-2); }
-  `}</style>
+
+    @media (max-width: 768px) {
+  /* Dashboard layout — stack sidebar on top */
+  .dashboard-layout {
+    flex-direction: column !important;
+  }
+  .dashboard-sidebar {
+    width: 100% !important;
+    min-height: auto !important;
+    flex-direction: row !important;
+    padding: 12px 16px !important;
+    overflow-x: auto;
+    gap: 6px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .dashboard-sidebar .sidebar-logo { display: none !important; }
+  .dashboard-sidebar .sidebar-user { display: none !important; }
+  .dashboard-content {
+    padding: 24px 16px !important;
+  }
+  /* Stats grid — 2 columns on mobile */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  /* Recent memories grid — single column */
+  .recent-grid {
+    grid-template-columns: 1fr !important;
+  }
+  /* Memory row — hide edit/delete text, show compact */
+  .memory-row-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+  /* Auth page padding */
+  .auth-card {
+    padding: 32px 24px !important;
+  }
+  /* Landing hero text */
+  .hero-buttons {
+    flex-direction: column !important;
+  }
+}
+  `}
+  
+  </style>
 );
 
 // ─── MESH BACKGROUND ─────────────────────────────────────────────────────────
@@ -349,10 +420,10 @@ const Nav = ({ page, setPage, isLoggedIn, setIsLoggedIn }) => {
       borderBottom: scrolled ? "1px solid var(--border)" : "none",
     }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <button onClick={() => setPage("landing")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-  <img src={CueSvg1} alt="Cue" style={{ width: 40, height: 40, objectFit: "contain" }} />
-  <span style={{ fontFamily: "var(--serif)", fontSize: 22, color: "var(--text)", letterSpacing: "-0.01em" }}>Cue</span>
-</button>
+        <button onClick={() => setPage("landing")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+          <img src={CueSvg1} alt="Cue" style={{ width: 40, height: 40, objectFit: "contain" }} />
+          <span style={{ fontFamily: "var(--serif)", fontSize: 22, color: "var(--text)", letterSpacing: "-0.01em" }}>Cue</span>
+        </button>
 
         {page === "landing" && (
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -507,27 +578,28 @@ const LandingPage = ({ setPage }) => {
       <section style={{ padding: "100px 40px", background: "rgba(100,149,237,0.02)" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
-          {FEATURES.map((f, i) => (
-  <div key={i} className="card" style={{ padding: "44px 40px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-    <div style={{
-      width: 120, height: 120, borderRadius: 24,
-      background: `${f.color}18`,
-      border: `1px solid ${f.color}44`,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      marginBottom: 28, overflow: "hidden",
-    }}>
-      <img src={f.svg} alt={f.title} style={{ width: 80, height: 80, objectFit: "contain",
-        filter: i === 0
-          ? "invert(1)"
-          : i === 1
-          ? "invert(0.6) sepia(1) saturate(3) hue-rotate(240deg)"
-          : "invert(0.5) sepia(1) saturate(5) hue-rotate(290deg)"
-      }} />
-    </div>
-    <h3 style={{ fontFamily: "var(--serif)", fontSize: 24, marginBottom: 14, letterSpacing: "-0.01em" }}>{f.title}</h3>
-    <p style={{ fontSize: 15, color: "var(--soft)", lineHeight: 1.7 }}>{f.desc}</p>
-  </div>
-))}
+            {FEATURES.map((f, i) => (
+              <div key={i} className="card" style={{ padding: "44px 40px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+                <div style={{
+                  width: 120, height: 120, borderRadius: 24,
+                  background: `${f.color}18`,
+                  border: `1px solid ${f.color}44`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  marginBottom: 28, overflow: "hidden",
+                }}>
+                  <img src={f.svg} alt={f.title} style={{
+                    width: 80, height: 80, objectFit: "contain",
+                    filter: i === 0
+                      ? "invert(1)"
+                      : i === 1
+                        ? "invert(0.6) sepia(1) saturate(3) hue-rotate(240deg)"
+                        : "invert(0.5) sepia(1) saturate(5) hue-rotate(290deg)"
+                  }} />
+                </div>
+                <h3 style={{ fontFamily: "var(--serif)", fontSize: 24, marginBottom: 14, letterSpacing: "-0.01em" }}>{f.title}</h3>
+                <p style={{ fontSize: 15, color: "var(--soft)", lineHeight: 1.7 }}>{f.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -633,20 +705,52 @@ const LandingPage = ({ setPage }) => {
 
       {/* FOOTER */}
       <footer style={{ borderTop: "1px solid var(--border)", padding: "48px 40px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src={CueSvg1} alt="Cue" style={{ width: 32, height: 32, objectFit: "contain" }} />
-            <span style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--text)" }}>Cue</span>
-            <span style={{ fontSize: 13, color: "var(--muted)", marginLeft: 8 }}>— Memories that outlive the present.</span>
+        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+          {/* Top footer section */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24, marginBottom: 40, paddingBottom: 40, borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <img src={CueSvg1} alt="Cue" style={{ width: 32, height: 32, objectFit: "contain" }} />
+              <span style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--text)" }}>Cue</span>
+              <span style={{ fontSize: 13, color: "var(--muted)", marginLeft: 8 }}>— Memories that outlive the present.</span>
+            </div>
+            <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+              {["About", "Privacy", "Terms", "Contact"].map(l => (
+                <span key={l} style={{ fontSize: 14, color: "var(--muted)", cursor: "pointer", transition: "color 0.2s" }}
+                  onMouseEnter={e => e.target.style.color = "var(--text)"}
+                  onMouseLeave={e => e.target.style.color = "var(--muted)"}>{l}</span>
+              ))}
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
-            {["About", "Privacy", "Terms", "Contact"].map(l => (
-              <span key={l} style={{ fontSize: 14, color: "var(--muted)", cursor: "pointer", transition: "color 0.2s" }}
-                onMouseEnter={e => e.target.style.color = "var(--text)"}
-                onMouseLeave={e => e.target.style.color = "var(--muted)"}>{l}</span>
-            ))}
+
+          {/* Bottom footer section - Creator credit */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+            <a 
+              href="https://tayo-e.github.io/Eyitayo-portfolio/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{
+                fontSize: 18,
+                fontWeight: 600,
+                color: "var(--cue)",
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
+                padding: "8px 16px",
+                borderRadius: 8,
+              }}
+              onMouseEnter={e => {
+                e.target.style.color = "var(--text)";
+                e.target.style.background = "rgba(221, 221, 243, 0.1)";
+              }}
+              onMouseLeave={e => {
+                e.target.style.color = "var(--cue)";
+                e.target.style.background = "transparent";
+              }}
+            >
+              Made by Tayo_e
+            </a>
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>© 2025 Cue. All rights reserved.</div>
           </div>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>© 2025 Cue. All rights reserved.</div>
         </div>
       </footer>
     </div>
@@ -654,18 +758,59 @@ const LandingPage = ({ setPage }) => {
 };
 
 // ─── AUTH PAGES ───────────────────────────────────────────────────────────────
-const AuthPage = ({ type, setPage, setIsLoggedIn }) => {
+const AuthPage = ({ type, setPage, setIsLoggedIn, setUserName }) => {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError("");
     if (!form.email || !form.password) { setError("Please fill all fields."); return; }
     if (type === "signup" && !form.name) { setError("Please enter your name."); return; }
     setLoading(true);
-    setTimeout(() => { setLoading(false); setIsLoggedIn(true); setPage("dashboard"); }, 1400);
+    try {
+      if (type === "signup") {
+        const result = await createUserWithEmailAndPassword(auth, form.email, form.password);
+        await updateProfile(result.user, { displayName: form.name });
+        await sendEmailVerification(result.user);   // ← add here
+        setIsLoggedIn(true);
+        setUserName(form.name);
+        setPage("dashboard");
+      } else {
+        const result = await signInWithEmailAndPassword(auth, form.email, form.password);
+        setIsLoggedIn(true);
+        setUserName(result.user.displayName || result.user.email.split("@")[0]);
+        setPage("dashboard");
+      }
+    } catch (err) {
+      setError(err.message.replace("Firebase: ", ""));
+    }
+    setLoading(false);
+
+
   };
+
+  //-- GOOGLE BUTTON HANDLER //
+  const handleGoogle = async () => {
+    try {
+      const { signInWithRedirect, getRedirectResult } = await import("firebase/auth");
+      await signInWithRedirect(auth, googleProvider);
+      // Page will redirect to Google and come back — result handled in App useEffect
+    } catch (err) {
+      setError(err.message.replace("Firebase: ", ""));
+    }
+  };
+
+  //-- FORGOTTEN PASSWORD HANDLER //
+
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!form.email) { setError("Enter your email above first."); return; }
+    await sendPasswordResetEmail(auth, form.email);
+    setResetSent(true);
+  };
+
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
@@ -673,10 +818,10 @@ const AuthPage = ({ type, setPage, setIsLoggedIn }) => {
       <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(rgba(100,149,237,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(100,149,237,0.03) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
 
       <div style={{ width: "100%", maxWidth: 460, padding: "0 24px", position: "relative", zIndex: 2 }}>
-        <div className="glass" style={{ borderRadius: 28, padding: "52px 48px" }}>
-          {/* Logo */}
+      <div className="glass auth-card" style={{ borderRadius: 28, padding: "52px 48px" }}>          {/* Logo */}
+          
           <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <img src={CueSvg1} alt="Cue" style={{ width: 64, height: 64, objectFit: "contain", margin: "0 auto 16px" }} />
+            <img src={CueSvg1} alt="Cue" style={{ width: 64, height: 64, objectFit: "contain", margin: "0 auto 16px" }} />
             <h1 style={{ fontFamily: "var(--serif)", fontSize: 28, letterSpacing: "-0.01em", marginBottom: 8 }}>
               {type === "login" ? "Welcome back." : "Begin your story."}
             </h1>
@@ -686,15 +831,16 @@ const AuthPage = ({ type, setPage, setIsLoggedIn }) => {
           </div>
 
           {/* Social Login */}
-                   {/* Social Login — ReactComponent SVGs must render as <Icon />, not {Icon} */}
-                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
+          {/* Social Login — ReactComponent SVGs must render as <Icon />, not {Icon} */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
             {[
               { Icon: GoogleSvg, label: "Google" },
               { Icon: AppleSvg, label: "Apple" },
             ].map((s) => {
               const Icon = s.Icon;
               return (
-                <button
+                <button 
+                onClick={s.label === "Google" ? handleGoogle : undefined}
                   key={s.label}
                   type="button"
                   className="btn-ghost"
@@ -736,6 +882,16 @@ const AuthPage = ({ type, setPage, setIsLoggedIn }) => {
 
             {error && <div style={{ fontSize: 13, color: "#F87171", textAlign: "center" }}>{error}</div>}
 
+            {type === "login" && (
+              <div style={{ textAlign: "right" }}>
+                {resetSent
+                  ? <span style={{ fontSize: 13, color: "#22C55E" }}>Reset email sent ✓</span>
+                  : <span style={{ fontSize: 13, color: "var(--cue)", cursor: "pointer" }} onClick={handleForgotPassword}>Forgot password?</span>
+                }
+              </div>
+            )}
+
+
             <button className="btn-primary" style={{ width: "100%", marginTop: 8, padding: "15px", borderRadius: 12, fontSize: 16 }} onClick={handleSubmit} disabled={loading}>
               {loading ? (
                 <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
@@ -766,7 +922,7 @@ const AuthPage = ({ type, setPage, setIsLoggedIn }) => {
 };
 
 // ─── DASHBOARD SIDEBAR ────────────────────────────────────────────────────────
-const Sidebar = ({ active, setActive, setPage }) => {
+const Sidebar = ({ active, setActive, setPage, userName }) => {
   const links = [
     { id: "overview", icon: "◎", label: "Overview" },
     { id: "memories", icon: "✉", label: "My Memories" },
@@ -775,10 +931,9 @@ const Sidebar = ({ active, setActive, setPage }) => {
   ];
 
   return (
-    <div className="glass" style={{ width: 220, minHeight: "100vh", padding: "32px 20px", display: "flex", flexDirection: "column", gap: 8, borderRight: "1px solid var(--border)", borderRadius: 0, borderLeft: "none", borderTop: "none", borderBottom: "none", flexShrink: 0 }}>
-      {/* Logo */}
+<div className="glass dashboard-sidebar" style={{ width: 220, minHeight: "100vh", padding: "32px 20px", display: "flex", flexDirection: "column", gap: 8, borderRight: "1px solid var(--border)", borderRadius: 0, borderLeft: "none", borderTop: "none", borderBottom: "none", flexShrink: 0 }}>      {/* Logo */}
       <img src={CueSvg1} alt="Cue" style={{ width: 36, height: 36, objectFit: "contain" }} />
-<span style={{ fontFamily: "var(--serif)", fontSize: 20 }}>Cue</span>
+      <span style={{ fontFamily: "var(--serif)", fontSize: 20 }}>Cue</span>
 
       {links.map(l => (
         <button key={l.id} onClick={() => l.id === "create" ? setActive("create") : setActive(l.id)}
@@ -799,21 +954,35 @@ const Sidebar = ({ active, setActive, setPage }) => {
       <div style={{ flex: 1 }} />
 
       {/* User */}
-      <div className="glass" style={{ padding: "14px 16px", borderRadius: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, background: "linear-gradient(135deg, #6495ED, #7C3AED)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14 }}>J</div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>Jordan</div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>Early Access</div>
-          </div>
-        </div>
-      </div>
+      <div className="sidebar-user glass" style={{ padding: "14px 16px", borderRadius: 14 }}>
+  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+    <div style={{ width: 36, height: 36, background: "linear-gradient(135deg, #6495ED, #7C3AED)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14 }}>
+      {(userName || "F").charAt(0).toUpperCase()}
     </div>
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 500 }}>{userName}</div>
+      <div style={{ fontSize: 11, color: "var(--muted)" }}>Early Access</div>
+    </div>
+  </div>
+  <button
+    onClick={async () => { await signOut(auth); window.location.href = "/"; }}
+    style={{
+      width: "100%", padding: "8px", borderRadius: 8, border: "1px solid var(--border)",
+      background: "transparent", color: "var(--muted)", fontSize: 12,
+      cursor: "pointer", fontFamily: "var(--sans)", transition: "all 0.2s",
+    }}
+    onMouseEnter={e => { e.target.style.borderColor = "#F87171"; e.target.style.color = "#F87171"; }}
+    onMouseLeave={e => { e.target.style.borderColor = "var(--border)"; e.target.style.color = "var(--muted)"; }}
+  >
+    Sign Out
+  </button>
+    </div>
+</div>
   );
 };
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
-const OverviewTab = ({ setActive, memories }) => {
+const OverviewTab = ({ setActive, memories, userName }) => {
   const stats = [
     { label: "Total Memories", value: memories.length, icon: "◎" },
     { label: "Scheduled", value: memories.filter(m => m.status === "Scheduled").length, icon: "◷" },
@@ -825,13 +994,14 @@ const OverviewTab = ({ setActive, memories }) => {
     <div>
       <div style={{ marginBottom: 48 }}>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>Good morning,</div>
-        <h1 style={{ fontFamily: "var(--serif)", fontSize: 42, letterSpacing: "-0.02em", marginBottom: 8 }}>Jordan.</h1>
+        <h1 style={{ fontFamily: "var(--serif)", fontSize: 42, letterSpacing: "-0.02em", marginBottom: 8 }}>
+          {userName}.
+        </h1>
         <p style={{ fontSize: 15, color: "var(--soft)" }}>You have {memories.filter(m => m.status !== "Delivered").length} memories sealed and waiting.</p>
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 40 }}>
-        {stats.map((s, i) => (
+      <div className="stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 40 }}>        {stats.map((s, i) => (
           <div key={i} className="card" style={{ padding: "28px 24px" }}>
             <div style={{ fontSize: 24, color: "var(--cue)", marginBottom: 12 }}>{s.icon}</div>
             <div style={{ fontFamily: "var(--serif)", fontSize: 36, marginBottom: 4 }}>{s.value}</div>
@@ -841,8 +1011,7 @@ const OverviewTab = ({ setActive, memories }) => {
       </div>
 
       {/* Recent memories */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div>
+      <div className="recent-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>        <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <h2 style={{ fontFamily: "var(--serif)", fontSize: 22 }}>Recent Memories</h2>
             <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--cue)", fontSize: 13 }} onClick={() => setActive("memories")}>View all →</button>
@@ -870,21 +1039,153 @@ const OverviewTab = ({ setActive, memories }) => {
 
 // ─── MEMORY ROW ───────────────────────────────────────────────────────────────
 const MemoryRow = ({ memory: m, compact }) => {
-  const typeIcons = { letter: "✉", video: "▶", voice: "♪", photo: "◎" };
+  const typeIcons = {
+    letter: "✉",
+    video: "▶",
+    voice: "♪",
+    photo: "◎"
+  };
+
   const days = daysUntil(m.deliveryDate);
+
+  const handleDelete = async () => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this memory?"
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      await deleteDoc(doc(db, "memories", m.id));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete memory.");
+    }
+  };
+
   return (
-    <div className="card" style={{ padding: compact ? "16px 20px" : "24px 28px", display: "flex", alignItems: "center", gap: 16 }}>
-      <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, background: "linear-gradient(135deg, rgba(100,149,237,0.2), rgba(124,58,237,0.2))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "var(--cue)" }}>
+    <div
+      className="card"
+      style={{
+        padding: compact ? "16px 20px" : "24px 28px",
+        display: "flex",
+        alignItems: "center",
+        gap: 16
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          flexShrink: 0,
+          borderRadius: 10,
+          background:
+            "linear-gradient(135deg, rgba(100,149,237,0.2), rgba(124,58,237,0.2))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 16,
+          color: "var(--cue)"
+        }}
+      >
         {typeIcons[m.type] || "◎"}
       </div>
+
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.title}</div>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>{m.recipient === "self" ? "To: Yourself" : `To: ${m.recipient}`} · {formatDate(m.deliveryDate)}</div>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            marginBottom: 4
+          }}
+        >
+          {m.title}
+        </div>
+
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--muted)"
+          }}
+        >
+          {m.recipient === "self"
+            ? "To: Yourself"
+            : `To: ${m.recipient}`}{" "}
+          · {formatDate(m.deliveryDate)}
+
+          {m.fileName && ` · 📎 ${m.fileName}`}
+        </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-        <span className={`status-badge status-${m.status.toLowerCase()}`}>{m.status}</span>
-        {m.status !== "Delivered" && <span style={{ fontSize: 11, color: "var(--muted)" }}>{days > 0 ? `${days}d away` : "Today"}</span>}
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: 6
+        }}
+      >
+        <span className={`status-badge status-${m.status.toLowerCase()}`}>
+          {m.status}
+        </span>
+
+        {m.status !== "Delivered" && (
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--muted)"
+            }}
+          >
+            {days > 0 ? `${days}d away` : "Today"}
+          </span>
+        )}
       </div>
+
+
+      <div className="memory-row-actions" style={{ display: "flex", gap: 8 }}>
+      <button
+  onClick={async () => {
+    const newTitle = prompt("Edit memory title", m.title);
+
+    if (!newTitle) return;
+
+    try {
+      await updateDoc(doc(db, "memories", m.id), {
+        title: newTitle
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update memory.");
+    }
+  }}
+  style={{
+    background: "transparent",
+    border: "1px solid var(--cue)",
+    color: "var(--cue)",
+    padding: "8px 12px",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 12,
+    marginRight: 8
+  }}
+  >
+    Edit
+   </button>
+
+      <button
+        onClick={handleDelete}
+        style={{
+          background: "transparent",
+          border: "1px solid #F87171",
+          color: "#F87171",
+          padding: "8px 12px",
+          borderRadius: 8,
+          cursor: "pointer",
+          fontSize: 12
+        }}
+      >
+        Delete
+      </button>
     </div>
   );
 };
@@ -924,26 +1225,110 @@ const MemoriesTab = ({ memories }) => {
   );
 };
 
-// ─── CREATE MEMORY ────────────────────────────────────────────────────────────
+// ─── CREATE MEMORY (Firebase Storage Version) ───────────────────────────────
 const CreateMemory = ({ setActive, addMemory }) => {
-  const [form, setForm] = useState({ title: "", message: "", recipient: "", deliveryDate: "", type: "letter" });
-  const [step, setStep] = useState(1);
+  const [form, setForm] = useState({ title: "", message: "", recipient: "", deliveryDate: "", deliveryTime: "09:00", type: "letter" });  const [step, setStep] = useState(1);
   const [sealed, setSealed] = useState(false);
+  const [sealing, setSealing] = useState(false);
+  const [attachment, setAttachment] = useState(null);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef(null);
 
   const update = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
-  const handleSeal = () => {
-    if (!form.title || !form.message || !form.deliveryDate) return;
-    setSealed(true);
-    setTimeout(() => {
-      addMemory({ ...form, id: Date.now(), status: "Scheduled", createdAt: new Date().toISOString().split("T")[0], preview: form.message.slice(0, 80) });
-      setTimeout(() => { setActive("memories"); }, 2000);
-    }, 1500);
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setUploadError("File must be under 500MB.");
+      return;
+    }
+    if (!isAllowedAttachment(file)) {
+      setUploadError("Unsupported file type. Use JPG, PNG, MP4, MOV, or MP3.");
+      return;
+    }
+    setUploadError("");
+    setAttachment(file);
+  };
+
+  const clearAttachment = () => {
+    setAttachment(null);
+    setUploadError("");
+  };
+
+  const handleSeal = async () => {
+    if (!auth.currentUser) {
+      setUploadError("You must be logged in.");
+      return;
+    }
+  
+    if (!form.title || !form.message || !form.deliveryDate || !form.recipient) return;
+  
+    setUploadError("");
+    setSealing(true);
+  
+
+    try {
+      let fileUrl = null;
+      let fileName = null;
+      let fileMimeType = null;
+
+      // === FIREBASE STORAGE UPLOAD ===
+      if (attachment) {
+        const { ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
+        const { storage } = await import("./firebase");
+
+        const storageRef = ref(
+          storage,
+          `memories/${auth.currentUser.uid}/${Date.now()}-${attachment.name}`
+        );
+
+        const snapshot = await uploadBytes(storageRef, attachment);
+        fileUrl = await getDownloadURL(snapshot.ref);
+        fileName = attachment.name;
+        fileMimeType = attachment.type;
+      }
+
+      // === SAVE TO FIRESTORE ===
+      // Build the scheduled delivery timestamp from date + time
+const deliveryDateTime = new Date(`${form.deliveryDate}T${form.deliveryTime || "09:00"}`);
+
+const memoryData = {
+  title: form.title,
+  message: form.message,
+  recipient: form.recipient,
+  type: form.type,
+  status: "Scheduled",
+  scheduledAt: Timestamp.fromDate(deliveryDateTime),
+  createdAt: serverTimestamp(),
+  preview: form.message.slice(0, 80),
+  userId: auth.currentUser.uid,
+  ...(fileUrl && { fileUrl, fileName, fileMimeType }),
+};
+
+      await addDoc(collection(db, "memories"), memoryData);
+
+      setSealed(true);
+      setTimeout(() => {
+        setActive("memories");
+      }, 1800);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      setUploadError(err.message || "Upload failed. Please try again.");
+      setSealing(false);
+    }
   };
 
   if (sealed) return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", textAlign: "center", gap: 24 }}>
-      <div style={{ fontSize: 72, animation: "float 3s ease-in-out infinite" }}>◎</div>
+      <div style={{
+        width: 80, height: 80,
+        background: "linear-gradient(135deg, #6495ED, #7C3AED)",
+        clipPath: "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
+        animation: "float 3s ease-in-out infinite",
+        filter: "drop-shadow(0 0 20px rgba(100,149,237,0.5))"
+      }} />
       <div>
         <h2 style={{ fontFamily: "var(--serif)", fontSize: 40, marginBottom: 12 }}>Memory Sealed.</h2>
         <p style={{ fontSize: 16, color: "var(--soft)" }}>Your Cue is traveling to {formatDate(form.deliveryDate)}.</p>
@@ -998,18 +1383,65 @@ const CreateMemory = ({ setActive, addMemory }) => {
               <label style={{ fontSize: 13, color: "var(--muted)", display: "block", marginBottom: 8 }}>MESSAGE</label>
               <textarea className="input-field" placeholder="Write your message to the future..." value={form.message} onChange={e => update("message", e.target.value)} rows={7} style={{ fontFamily: "var(--sans)", lineHeight: 1.7 }} />
             </div>
-            {/* File upload placeholder */}
-            <div style={{ border: "2px dashed var(--border)", borderRadius: 14, padding: "32px", textAlign: "center", cursor: "pointer", transition: "all 0.2s" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = "var(--cue)"}
-              onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}>
-              <div style={{ fontSize: 28, color: "var(--muted)", marginBottom: 10 }}>↑</div>
-              <div style={{ fontSize: 14, color: "var(--soft)" }}>Attach photos or videos</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Up to 500MB · JPG, PNG, MP4, MOV, MP3</div>
+
+            {/* FILE UPLOAD */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.mp4,.mov,.mp3,.m4a,.wav,image/jpeg,image/png,video/mp4,video/quicktime,audio/mpeg,audio/mp3,audio/wav"
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+              style={{
+                border: `2px dashed ${attachment ? "var(--cue)" : "var(--border)"}`,
+                borderRadius: 14,
+                padding: attachment ? "20px 24px" : "32px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.2s",
+                background: attachment ? "rgba(100,149,237,0.06)" : "transparent",
+              }}
+            >
+              {attachment ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, color: "var(--text)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {attachment.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                      {(attachment.size / (1024 * 1024)).toFixed(1)} MB · Ready to upload on seal
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ padding: "8px 14px", fontSize: 12, flexShrink: 0 }}
+                    onClick={(e) => { e.stopPropagation(); clearAttachment(); }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 28, color: "var(--muted)", marginBottom: 10 }}>↑</div>
+                  <div style={{ fontSize: 14, color: "var(--soft)" }}>Attach photos or videos</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Up to 500MB · JPG, PNG, MP4, MOV, MP3</div>
+                </>
+              )}
             </div>
+            {uploadError && step === 1 && (
+              <div style={{ fontSize: 13, color: "#F87171" }}>{uploadError}</div>
+            )}
             <button className="btn-primary" style={{ alignSelf: "flex-end", padding: "13px 36px" }} onClick={() => setStep(2)} disabled={!form.title || !form.message}>Continue →</button>
           </div>
         )}
 
+        {/* STEP 2 — unchanged from your current code */}
         {step === 2 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div>
@@ -1032,9 +1464,21 @@ const CreateMemory = ({ setActive, addMemory }) => {
                 <div style={{ marginTop: 10, fontSize: 13, color: "var(--cue)" }}>
                   ◎ Delivering in {daysUntil(form.deliveryDate)} days · {formatDate(form.deliveryDate)}
                 </div>
+
+<div>
+<label style={{ fontSize: 13, color: "var(--muted)", display: "block", marginBottom: 8 }}>DELIVERY TIME</label>
+<input
+  className="input-field"
+  type="time"
+  value={form.deliveryTime}
+  onChange={e => update("deliveryTime", e.target.value)}
+/>
+<div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+  The memory will be delivered at this exact time on the chosen date.
+</div>
+</div>
               )}
             </div>
-            {/* Preview */}
             {form.deliveryDate && (
               <div className="glass-bright" style={{ padding: "20px", borderRadius: 14 }}>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Preview</div>
@@ -1053,9 +1497,20 @@ const CreateMemory = ({ setActive, addMemory }) => {
           </div>
         )}
 
+        {/* STEP 3 */}
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 28 }}>
-            <div style={{ width: 100, height: 100, borderRadius: "50%", background: "linear-gradient(135deg, rgba(100,149,237,0.2), rgba(124,58,237,0.2))", border: "1px solid var(--border-bright)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, animation: "float 4s ease-in-out infinite" }}>◎</div>
+            <img
+  src={CueSvg1}
+  alt="Cue"
+  style={{
+    width: 100,
+    height: 100,
+    objectFit: "contain",
+    animation: "float 4s ease-in-out infinite",
+    filter: "drop-shadow(0 0 20px rgba(100,149,237,0.5))",
+  }}
+/>
             <div>
               <h2 style={{ fontFamily: "var(--serif)", fontSize: 32, letterSpacing: "-0.01em", marginBottom: 12 }}>Ready to seal.</h2>
               <p style={{ fontSize: 15, color: "var(--soft)", lineHeight: 1.7, maxWidth: 420 }}>
@@ -1071,16 +1526,25 @@ const CreateMemory = ({ setActive, addMemory }) => {
               ))}
             </div>
             <div style={{ display: "flex", gap: 12 }}>
-              <button className="btn-ghost" style={{ padding: "14px 32px" }} onClick={() => setStep(2)}>← Revise</button>
-              <button className="btn-primary" style={{ padding: "14px 48px", fontSize: 16, letterSpacing: "0.02em" }} onClick={handleSeal}>Seal Cue ◎</button>
+              <button className="btn-ghost" style={{ padding: "14px 32px" }} onClick={() => setStep(2)} disabled={sealing}>← Revise</button>
+              <button
+                className="btn-primary"
+                style={{ padding: "14px 48px", fontSize: 16, letterSpacing: "0.02em" }}
+                onClick={handleSeal}
+                disabled={sealing}
+              >
+                {sealing ? (attachment ? "Uploading & sealing…" : "Sealing…") : "Seal Cue ◎"}
+              </button>
             </div>
+            {uploadError && step === 3 && (
+              <div style={{ fontSize: 13, color: "#F87171" }}>{uploadError}</div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 };
-
 // ─── VAULT TAB ────────────────────────────────────────────────────────────────
 const VaultTab = ({ memories }) => (
   <div>
@@ -1111,17 +1575,17 @@ const VaultTab = ({ memories }) => (
   </div>
 );
 
-// ─── DASHBOARD ────────────────────────────────────────────────────────────────
-const Dashboard = () => {
+// // ─── DASHBOARD (clean version) ───────────────────────────────────────────────
+const Dashboard = ({ userName, memories, addMemory }) => {
   const [active, setActive] = useState("overview");
-  const [memories, setMemories] = useState(MOCK_MEMORIES);
-  const addMemory = (m) => setMemories(prev => [m, ...prev]);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar active={active} setActive={setActive} />
-      <div style={{ flex: 1, padding: "48px 52px", overflowY: "auto", maxWidth: "100%" }}>
-        {active === "overview" && <OverviewTab setActive={setActive} memories={memories} />}
+    <div className="dashboard-layout" style={{ display: "flex", minHeight: "100vh" }}>
+  <Sidebar active={active} setActive={setActive} userName={userName} />
+  <div className="dashboard-content" style={{ flex: 1, padding: "48px 52px", overflowY: "auto" }}>
+        {active === "overview" && (
+          <OverviewTab setActive={setActive} memories={memories} userName={userName} />
+        )}
         {active === "memories" && <MemoriesTab memories={memories} />}
         {active === "vault" && <VaultTab memories={memories} />}
         {active === "create" && <CreateMemory setActive={setActive} addMemory={addMemory} />}
@@ -1133,19 +1597,117 @@ const Dashboard = () => {
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage] = useState("landing");
+  const [userName, setUserName] = useState("Friend");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [memories, setMemories] = useState([]);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [page]);
+  // REAL AUTH STATE + FIRESTORE LISTENER (single source of truth)
+  // Handle Google redirect result on page load
+
+
+  useEffect(() => {
+
+    import("firebase/auth").then(({ getRedirectResult }) => {
+      getRedirectResult(auth).then((result) => {
+        if (result?.user) {
+          setIsLoggedIn(true);
+          setUserName(result.user.displayName || result.user.email.split("@")[0]);
+          setPage("dashboard");
+        }
+      }).catch(() => {});
+    });
+
+
+    let unsubscribeFirestore = null;
+  
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+  
+      // CLEAN OLD LISTENER
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+        unsubscribeFirestore = null;
+      }
+  
+      if (currentUser) {
+        setIsLoggedIn(true);
+  
+        setUserName(
+          currentUser.displayName ||
+          currentUser.email.split("@")[0]
+        );
+  
+        const q = query(
+          collection(db, "memories"),
+          where("userId", "==", currentUser.uid),
+          orderBy("createdAt", "desc")
+        );
+  
+        unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+          const realMemories = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+  
+          console.log("Loaded memories:", realMemories);
+  
+          setMemories(realMemories);
+        });
+  
+      } else {
+        setIsLoggedIn(false);
+        setMemories([]);
+      }
+    });
+  
+    return () => {
+      unsubscribeAuth();
+  
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
+  }, []);
+
+  const addMemory = (newMemory) => {
+    // This is now only for optimistic UI if you want it — the listener will handle it
+    setMemories((prev) => [newMemory, ...prev]);
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setIsLoggedIn(false);
+    setPage("landing");
+  };
 
   return (
     <>
       <GlobalStyles />
       <div className="noise-overlay" />
-      {page !== "dashboard" && <Nav page={page} setPage={setPage} isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />}
+
+      {page !== "dashboard" && (
+        <Nav
+          page={page}
+          setPage={setPage}
+          isLoggedIn={isLoggedIn}
+          setIsLoggedIn={handleLogout}   // ← now uses real signOut
+        />
+      )}
+
       {page === "landing" && <LandingPage setPage={setPage} />}
-      {page === "login" && <AuthPage type="login" setPage={setPage} setIsLoggedIn={setIsLoggedIn} />}
-      {page === "signup" && <AuthPage type="signup" setPage={setPage} setIsLoggedIn={setIsLoggedIn} />}
-      {page === "dashboard" && <Dashboard />}
+      {page === "login" && (
+        <AuthPage type="login" setPage={setPage} setIsLoggedIn={setIsLoggedIn} setUserName={setUserName} />
+      )}
+      {page === "signup" && (
+        <AuthPage type="signup" setPage={setPage} setIsLoggedIn={setIsLoggedIn} setUserName={setUserName} />
+      )}
+      {page === "dashboard" && (
+        <Dashboard
+          userName={userName}
+          memories={memories}
+          addMemory={addMemory}
+        />
+      )}
     </>
   );
 }
