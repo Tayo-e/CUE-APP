@@ -1,0 +1,487 @@
+/* ─── RESPONSIVE GRID & LAYOUT FIXES ─── */
+
+/* Tablet: 768px and below */
+@media (max-width: 768px) {
+    /* Landing page hero */
+    .hero-text-wrapper {
+      flex-direction: column !important;
+      align-items: center !important;
+      text-align: center !important;
+    }
+  
+    .hero-buttons {
+      flex-direction: column !important;
+      width: 100% !important;
+      gap: 12px !important;
+    }
+  
+    .hero-buttons button {
+      width: 100% !important;
+      padding: 14px 24px !important;
+    }
+  
+    /* Feature grid */
+    .feature-grid {
+      grid-template-columns: 1fr !important;
+      gap: 24px !important;
+      padding: 0 16px !important;
+    }
+  
+    .feature-card {
+      padding: 32px 20px !important;
+    }
+  
+    /* Use cases grid */
+    .use-cases-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 12px !important;
+    }
+  
+    .use-case-item {
+      padding: 20px 16px !important;
+      font-size: 12px !important;
+    }
+  
+    .use-case-item .emoji {
+      font-size: 32px !important;
+    }
+  
+    /* Dashboard stats grid */
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 12px !important;
+    }
+  
+    .stat-card {
+      padding: 20px 16px !important;
+    }
+  
+    /* Dashboard sidebar */
+    .dashboard-layout {
+      flex-direction: column !important;
+    }
+  
+    .dashboard-sidebar {
+      width: 100% !important;
+      min-height: auto !important;
+      flex-direction: row !important;
+      padding: 12px 16px !important;
+      overflow-x: auto !important;
+      gap: 6px !important;
+      border-right: none !important;
+      border-bottom: 1px solid var(--border) !important;
+    }
+  
+    .dashboard-sidebar .sidebar-logo {
+      display: none !important;
+    }
+  
+    .dashboard-sidebar .sidebar-user {
+      display: none !important;
+    }
+  
+    .sidebar-nav-item {
+      padding: 10px 16px !important;
+      font-size: 12px !important;
+      white-space: nowrap !important;
+    }
+  
+    .dashboard-content {
+      padding: 20px 16px !important;
+    }
+  
+    /* Recent grid — single column */
+    .recent-grid {
+      grid-template-columns: 1fr !important;
+    }
+  
+    /* Memory rows */
+    .memory-row-actions {
+      flex-direction: column !important;
+      gap: 4px !important;
+    }
+  
+    .memory-row-actions button {
+      padding: 8px 12px !important;
+      font-size: 11px !important;
+    }
+  
+    /* Auth card */
+    .auth-card {
+      padding: 32px 24px !important;
+      max-width: 100% !important;
+    }
+  
+    .auth-divider {
+      gap: 8px !important;
+    }
+  
+    /* Create memory steps */
+    .create-memory-steps {
+      gap: 8px !important;
+      margin-bottom: 32px !important;
+    }
+  
+    .step-indicator {
+      padding: 12px !important;
+      font-size: 12px !important;
+    }
+  
+    /* Form inputs */
+    .input-field {
+      width: 100% !important;
+      padding: 12px !important;
+      font-size: 16px !important;
+    }
+  
+    .form-group {
+      gap: 12px !important;
+    }
+  
+    /* Buttons in forms */
+    .form-buttons {
+      flex-direction: column !important;
+      gap: 12px !important;
+    }
+  
+    .form-buttons button {
+      width: 100% !important;
+      padding: 12px !important;
+    }
+  
+    /* Ticker scroll */
+    .ticker-scroll {
+      font-size: 11px !important;
+      gap: 30px !important;
+    }
+  
+    /* Testimonials */
+    .testimonials-grid {
+      grid-template-columns: 1fr !important;
+    }
+  
+    .testimonial-card {
+      padding: 24px 16px !important;
+    }
+  }
+  
+  /* Mobile: 480px and below */
+  @media (max-width: 480px) {
+    /* Hero text */
+    .hero-text-wrapper h1 {
+      font-size: 28px !important;
+      line-height: 1.2 !important;
+    }
+  
+    .hero-text-wrapper p {
+      font-size: 14px !important;
+      line-height: 1.5 !important;
+    }
+  
+    /* Hero buttons stack */
+    .hero-buttons {
+      flex-direction: column !important;
+      gap: 10px !important;
+    }
+  
+    .hero-buttons button {
+      width: 100% !important;
+      padding: 12px 16px !important;
+      font-size: 13px !important;
+    }
+  
+    /* Feature grid - all single column */
+    .feature-grid {
+      grid-template-columns: 1fr !important;
+      gap: 16px !important;
+      padding: 0 12px !important;
+    }
+  
+    .feature-card {
+      padding: 24px 16px !important;
+    }
+  
+    .feature-card img {
+      width: 50px !important;
+      height: 50px !important;
+    }
+  
+    /* Use cases - single column */
+    .use-cases-grid {
+      grid-template-columns: 1fr !important;
+      gap: 12px !important;
+    }
+  
+    .use-case-item {
+      padding: 16px 12px !important;
+      font-size: 11px !important;
+    }
+  
+    .use-case-item .emoji {
+      font-size: 28px !important;
+    }
+  
+    .use-case-item .title {
+      font-size: 12px !important;
+    }
+  
+    .use-case-item .desc {
+      font-size: 11px !important;
+    }
+  
+    /* Dashboard - full mobile layout */
+    .dashboard-layout {
+      flex-direction: column !important;
+      gap: 0 !important;
+    }
+  
+    .dashboard-sidebar {
+      width: 100% !important;
+      min-height: 50px !important;
+      flex-direction: row !important;
+      overflow-x: auto !important;
+      padding: 8px 12px !important;
+      gap: 4px !important;
+      border: none !important;
+      border-bottom: 1px solid var(--border) !important;
+    }
+  
+    .sidebar-nav-item {
+      padding: 8px 12px !important;
+      font-size: 11px !important;
+      min-width: fit-content !important;
+      white-space: nowrap !important;
+    }
+  
+    .dashboard-content {
+      width: 100% !important;
+      padding: 16px 12px !important;
+    }
+  
+    /* Stats - 2x2 grid */
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 10px !important;
+    }
+  
+    .stat-card {
+      padding: 16px 12px !important;
+      font-size: 12px !important;
+    }
+  
+    .stat-card .value {
+      font-size: 24px !important;
+    }
+  
+    .stat-card .label {
+      font-size: 10px !important;
+    }
+  
+    /* Recent memories - single column */
+    .recent-grid {
+      grid-template-columns: 1fr !important;
+      gap: 16px !important;
+    }
+  
+    /* Memory rows */
+    .memory-row {
+      padding: 16px 12px !important;
+      flex-wrap: wrap !important;
+    }
+  
+    .memory-row-icon {
+      width: 32px !important;
+      height: 32px !important;
+      font-size: 14px !important;
+    }
+  
+    .memory-row-info {
+      font-size: 12px !important;
+    }
+  
+    .memory-row-info .title {
+      font-size: 13px !important;
+    }
+  
+    .memory-row-actions {
+      width: 100% !important;
+      flex-direction: row !important;
+      gap: 6px !important;
+      margin-top: 8px !important;
+    }
+  
+    .memory-row-actions button {
+      flex: 1 !important;
+      padding: 6px 8px !important;
+      font-size: 10px !important;
+    }
+  
+    /* Auth form */
+    .auth-card {
+      padding: 24px 16px !important;
+    }
+  
+    .auth-card h2 {
+      font-size: 22px !important;
+      margin-bottom: 16px !important;
+    }
+  
+    .auth-form {
+      gap: 10px !important;
+    }
+  
+    .input-field {
+      width: 100% !important;
+      padding: 11px !important;
+      font-size: 14px !important;
+    }
+  
+    .auth-form button {
+      width: 100% !important;
+      padding: 11px !important;
+      font-size: 14px !important;
+    }
+  
+    /* Create memory form */
+    .create-memory-wrapper {
+      max-width: 100% !important;
+      padding: 0 12px !important;
+    }
+  
+    .create-memory-title {
+      font-size: 24px !important;
+      margin-bottom: 8px !important;
+    }
+  
+    .create-memory-desc {
+      font-size: 13px !important;
+      margin-bottom: 24px !important;
+    }
+  
+    .create-memory-steps {
+      gap: 6px !important;
+      margin-bottom: 24px !important;
+    }
+  
+    .step-indicator {
+      padding: 10px 8px !important;
+      font-size: 11px !important;
+    }
+  
+    .form-group {
+      gap: 8px !important;
+      margin-bottom: 12px !important;
+    }
+  
+    .form-group label {
+      font-size: 11px !important;
+    }
+  
+    .form-group textarea {
+      font-size: 14px !important;
+      padding: 10px !important;
+      min-height: 150px !important;
+    }
+  
+    .form-buttons {
+      flex-direction: column !important;
+      gap: 10px !important;
+    }
+  
+    .form-buttons button {
+      width: 100% !important;
+      padding: 11px !important;
+      font-size: 13px !important;
+    }
+  
+    /* Ticker */
+    .ticker-scroll {
+      font-size: 10px !important;
+      gap: 20px !important;
+      padding: 8px 0 !important;
+    }
+  
+    /* Cards and glass effects */
+    .card {
+      padding: 16px 12px !important;
+      border-radius: 12px !important;
+    }
+  
+    .glass {
+      padding: 12px !important;
+      border-radius: 10px !important;
+    }
+  
+    /* Seal animation screen */
+    .seal-success-wrapper {
+      padding: 20px !important;
+    }
+  
+    .seal-success-icon {
+      width: 60px !important;
+      height: 60px !important;
+    }
+  
+    .seal-success-text {
+      font-size: 20px !important;
+    }
+  
+    .seal-success-subtext {
+      font-size: 12px !important;
+    }
+  
+    /* Status badges */
+    .status-badge {
+      padding: 4px 8px !important;
+      font-size: 10px !important;
+    }
+  }
+  
+  /* Extra small devices: 360px and below */
+  @media (max-width: 360px) {
+    .hero-text-wrapper h1 {
+      font-size: 22px !important;
+    }
+  
+    .create-memory-title {
+      font-size: 20px !important;
+    }
+  
+    .stat-card .value {
+      font-size: 20px !important;
+    }
+  
+    .memory-row-actions button {
+      padding: 5px 6px !important;
+      font-size: 9px !important;
+    }
+  }
+  
+  /* Landscape on mobile: 600px width, 500px height max */
+  @media (max-width: 600px) and (max-height: 500px) {
+    section {
+      padding: 30px 16px !important;
+      min-height: auto !important;
+    }
+  
+    .hero-text-wrapper {
+      gap: 16px !important;
+    }
+  
+    .dashboard-sidebar {
+      padding: 6px 12px !important;
+    }
+  
+    .dashboard-content {
+      padding: 12px !important;
+    }
+  
+    .stats-grid {
+      gap: 8px !important;
+    }
+  
+    .stat-card {
+      padding: 12px 8px !important;
+    }
+  }
+  
